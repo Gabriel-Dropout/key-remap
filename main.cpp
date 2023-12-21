@@ -30,159 +30,129 @@ DWORD mainThreadID = GetCurrentThreadId();
 DWORD trayThreadID = 0;
 
 HHOOK kHook;
-// Keyboard input states
-typedef struct KeyState {
-  DWORD vkCode;
-  bool isDown, isPressed, isReleased;
-} KeyState;
 enum KEY_STATE {
-  KS_CAPS, KS_ALT,
-  KS_H, KS_J, KS_K, KS_L,
-  KS_U, KS_I,
-  KS_Y, KS_O,
-  KS_COUNT,
+  KS_UP, KS_DOWN, KS_HOLD, KS_TAP
 };
-KeyState keyStates[KS_COUNT] = {
-  {VK_CAPS, false, false, false},
-  {VK_ALT, false, false, false},
-  {VK_H, false, false, false},
-  {VK_J, false, false, false},
-  {VK_K, false, false, false},
-  {VK_L, false, false, false},
-  {VK_U, false, false, false},
-  {VK_I, false, false, false},
-  {VK_Y, false, false, false},
-  {VK_O, false, false, false},
-};
-
-// Used to determine the behavior of the Caps/Alt release event
-enum KEY_AFTER {
-  KA_NONE,
-  KA_SPECIAL,
-  KA_NORMAL,
-};
-int keyAfterCaps = KA_NONE, keyAfterAlt = KA_NONE;
+int layer = 0;
+int capsState = KS_UP, altState = KS_UP, ctrlState = KS_UP;
+bool capsDown = false, altDown = false, ctrlDown = false;
+bool hDown = false, jDown = false, kDown = false, lDown = false, yDown = false, oDown = false;
 
 // Timer callback function for cursor movement
 VOID CALLBACK timerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
     POINT p;
     if (!enabled) return;
     if (!GetCursorPos(&p)) return;
-    if (!keyStates[KS_ALT].isDown) return;
+    if (layer != 1) return;
     long long time = getTime();
     long long delta = (lastTime == 0) ? 0 : time - lastTime;
 
     // Cursor movement
-    int _h = (int)keyStates[KS_L].isDown - (int)keyStates[KS_H].isDown;
-    int _v = (int)keyStates[KS_J].isDown - (int)keyStates[KS_K].isDown;
+    int _h = (int)lDown - (int)hDown;
+    int _v = (int)jDown - (int)kDown;
 
-    double _spd = (double)delta*0.4;
-    if(keyStates[KS_CAPS].isDown) _spd *= 2.0;
-    if(_h != 0 && _v != 0) _spd *= 0.70710678118;
+    double _spd = (double)delta*0.35;
+    if (capsDown) _spd *= 2.0;
+    if (_h != 0 && _v != 0) _spd *= 0.70710678118;
 
     SetCursorPos(p.x + (int)(_h*_spd), p.y + (int)(_v*_spd));
 
     // Wheel movement
-    int movement = (int)keyStates[KS_O].isDown - (int)keyStates[KS_Y].isDown;
+    int movement = (int)oDown - (int)yDown;
     _spd = (double)delta;
-    if(keyStates[KS_CAPS].isDown) _spd *= 2.0;
-    if(movement != 0) {
+    if (capsDown) _spd *= 2.0;
+    if (movement != 0) {
       inputMouseWheel((int)(movement*_spd));
     }
 
     lastTime = time;
 }
 
+void updateKeyState(int &keyState, bool match, bool keydown) {
+  if (keyState == KS_TAP)
+    keyState = KS_UP;
+  if (match) {
+    if (keydown) {
+      keyState = (keyState == KS_UP) ? KS_DOWN : keyState;
+    } else {
+      if (keyState == KS_DOWN)
+        keyState = KS_TAP;
+      else
+        keyState = KS_UP;
+    }
+  } else {
+    if (keyState == KS_DOWN && keydown) {
+      keyState = KS_HOLD;
+    }
+  }
+}
+
+void updateDownState(bool &keyState, bool match, bool keydown) {
+  if (match) {
+    keyState = keydown;
+  }
+}
+
 LRESULT CALLBACK hookKeyboard(int nCode, WPARAM wParam, LPARAM lParam) {
   bool keydown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
   KBDLLHOOKSTRUCT *key = (KBDLLHOOKSTRUCT *)lParam;
   DWORD vkCode = key->vkCode;
-  bool uJustPressed = false, iJustPressed = false, uJustReleased = false, iJustReleased = false;
 
-  // Ignore injected events
+  // ignore injected events
   if (!enabled) goto passing;
   if (nCode != HC_ACTION) goto passing;
   if (key->dwExtraInfo == 0x12345678) goto passing;
+  
+  // update key states
+  updateKeyState(capsState, vkCode == VK_CAPITAL, keydown);
+  updateKeyState(altState, vkCode == VK_LMENU, keydown);
+  updateKeyState(ctrlState, vkCode == VK_LCONTROL, keydown);
+  updateDownState(capsDown, vkCode == VK_CAPITAL, keydown);
+  updateDownState(altDown, vkCode == VK_LMENU, keydown);
+  updateDownState(ctrlDown, vkCode == VK_LCONTROL, keydown);
+  updateDownState(hDown, vkCode == VK_H, keydown);
+  updateDownState(jDown, vkCode == VK_J, keydown);
+  updateDownState(kDown, vkCode == VK_K, keydown);
+  updateDownState(lDown, vkCode == VK_L, keydown);
+  updateDownState(yDown, vkCode == VK_Y, keydown);
+  updateDownState(oDown, vkCode == VK_O, keydown);
 
-  // Set keyboard input states
-  for(int i=0; i<KS_COUNT; i++) {
-    if(keyStates[i].vkCode == vkCode) {
-      keyStates[i].isPressed = keydown && !keyStates[i].isDown;
-      keyStates[i].isReleased = !keydown && keyStates[i].isDown;
-      keyStates[i].isDown = keydown;
-    } else {
-      keyStates[i].isPressed = false;
-      keyStates[i].isReleased = false;
-    }
-  }
-
-  // Set afterkey states
-  if(keydown && keyStates[KS_CAPS].isDown) {
-    if(vkCode == VK_CAPITAL) {
-      // Do nothing
-    } else if(vkCode == VK_ALT) {
-      keyAfterCaps = keyAfterCaps==KA_NONE ? KA_SPECIAL : keyAfterCaps;
-    } else {
-      keyAfterCaps = KA_NORMAL;
-    }
-  }
-  if(keydown && keyStates[KS_ALT].isDown) {
-    if(vkCode == VK_LMENU) {
-      // Do nothing
-    } else if (vkCode == VK_CAPS || vkCode == VK_H || vkCode == VK_J || vkCode == VK_K || vkCode == VK_L ||
-               vkCode == VK_U || vkCode == VK_I || vkCode == VK_Y || vkCode == VK_O) {
-      keyAfterAlt = keyAfterAlt==KA_NONE ? KA_SPECIAL : keyAfterAlt;
-    } else {
-      keyAfterAlt = KA_NORMAL;
-    }
-  }
-
-  // Handle each case
-  if (keyStates[KS_CAPS].isPressed || keyStates[KS_ALT].isPressed) {
-    return 1;
-  }
-  if (keyStates[KS_CAPS].isReleased) {
-    if (keyAfterCaps == KA_NONE) {
-      // Send Esc key
+  // layer switching
+  layer = altDown ? 1 : 0;
+  // safe release
+  if (!capsDown && !ctrlDown && isKeyDown(VK_LCONTROL))
+    inputKey(VK_LCONTROL, 0, 1);
+  if (!altDown && isKeyDown(VK_LMENU))
+    inputKey(VK_LMENU, 0, 1);
+  
+  if (layer == 0) { // ------- LAYER 0
+    if (capsState == KS_HOLD && !isKeyDown(VK_LCONTROL))
+      inputKey(VK_LCONTROL, 0, 0);
+    if (capsState == KS_TAP) {
       inputKey(VK_ESCAPE, 0, 0);
       inputKey(VK_ESCAPE, 0, 1);
-    } else if (keyAfterCaps == KA_SPECIAL) {
-      // Do nothing
-    } else if (keyAfterCaps == KA_NORMAL) {
-      // Release Ctrl key
-      inputKey(VK_CONTROL, 0, 1);
     }
-    keyAfterCaps = KA_NONE;
-    return 1;
-  }
-  if (keyStates[KS_ALT].isReleased) {
-    if (keyAfterAlt == KA_NONE) {
-      // Send Alt key
+    if (altState == KS_TAP) {
       inputKey(VK_LMENU, 0, 0);
       inputKey(VK_LMENU, 0, 1);
-    } else if (keyAfterAlt == KA_SPECIAL) {
-      // Do nothing
-    } else if (keyAfterAlt == KA_NORMAL) {
-      // Release Alt key
-      inputKey(VK_LMENU, 0, 1);
     }
-    keyAfterAlt = KA_NONE;
+  } else if (layer == 1) {  // LAYER 1
+    if (altState == KS_HOLD && !isKeyDown(VK_LMENU))
+      inputKey(VK_LMENU, 0, 0);
+    if (vkCode == VK_U && keydown && !isKeyDown(VK_LBUTTON))
+      inputMouse(true, 0);
+    if (vkCode == VK_I && keydown && !isKeyDown(VK_RBUTTON))
+      inputMouse(false, 0);
+    if (vkCode == VK_U && !keydown && isKeyDown(VK_LBUTTON))
+      inputMouse(true, 1);
+    if (vkCode == VK_I && !keydown && isKeyDown(VK_RBUTTON))
+      inputMouse(false, 1);
+    if (vkCode == VK_H || vkCode == VK_J || vkCode == VK_K || vkCode == VK_L || vkCode == VK_U || vkCode == VK_I || vkCode == VK_Y || vkCode == VK_O)
+      return 1;
+  }
+
+  if(vkCode == VK_CAPITAL || vkCode == VK_LMENU)
     return 1;
-  }
-  if (keyStates[KS_ALT].isDown) {
-    if(keyStates[KS_U].isPressed) inputMouse(true, 0);
-    if(keyStates[KS_U].isReleased) inputMouse(true, 1);
-    if(keyStates[KS_I].isPressed) inputMouse(false, 0);
-    if(keyStates[KS_I].isReleased) inputMouse(false, 1);
-    if(vkCode == VK_H || vkCode == VK_J || vkCode == VK_K || vkCode == VK_L || vkCode == VK_U || vkCode == VK_I || vkCode == VK_Y || vkCode == VK_O)
-       return 1;
-    // Send Alt+Key
-    if (keydown) inputKey(VK_LMENU, 0, 0);
-  }
-  if (keyStates[KS_CAPS].isDown) {
-    // Send Ctrl+Key
-    if (keydown) inputKey(VK_CONTROL, 0, 0);
-  }
   
 passing:
   return CallNextHookEx(kHook, nCode, wParam, lParam);
@@ -248,7 +218,12 @@ int main() {
   kHook = SetWindowsHookEx(WH_KEYBOARD_LL, hookKeyboard, NULL, 0);
   MSG msg;
   while (GetMessage(&msg, NULL, 0, 0) > 0) {
-    if(msg.message == WM_QUIT) break;
+    if(msg.message == WM_QUIT) {
+      if (isKeyDown(VK_CAPITAL)) inputKey(VK_CAPITAL, 0, 1);
+      if (isKeyDown(VK_LMENU)) inputKey(VK_LMENU, 0, 1);
+      if (isKeyDown(VK_LCONTROL)) inputKey(VK_LCONTROL, 0, 1);
+      break;
+    }
 
     TranslateMessage(&msg);
     DispatchMessage(&msg);

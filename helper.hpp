@@ -1,10 +1,15 @@
 #ifndef HELPER_HPP
 #define HELPER_HPP
 #include <chrono>
+#include <winuser.h>
 
 // Get current time in milliseconds
 static long long getTime() {
   return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
+static bool isKeyDown(WORD vkCode) {
+  return (GetAsyncKeyState(vkCode) & 0x8000) != 0;
 }
 
 // Send keyboard input
