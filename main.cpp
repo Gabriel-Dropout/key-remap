@@ -30,10 +30,10 @@ DWORD mainThreadID = GetCurrentThreadId();
 DWORD trayThreadID = 0;
 
 HHOOK kHook;
+int layer = 0;
 enum KEY_STATE {
   KS_UP, KS_DOWN, KS_HOLD, KS_TAP
 };
-int layer = 0;
 int capsState = KS_UP, altState = KS_UP, ctrlState = KS_UP;
 bool capsDown = false, altDown = false, ctrlDown = false;
 bool hDown = false, jDown = false, kDown = false, lDown = false, yDown = false, oDown = false;
@@ -51,11 +51,12 @@ VOID CALLBACK timerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
     int _h = (int)lDown - (int)hDown;
     int _v = (int)jDown - (int)kDown;
 
-    double _spd = (double)delta*0.35;
+    double _spd = (double)delta*0.3;
     if (capsDown) _spd *= 2.0;
     if (_h != 0 && _v != 0) _spd *= 0.70710678118;
-
-    SetCursorPos(p.x + (int)(_h*_spd), p.y + (int)(_v*_spd));
+    if (_h != 0 || _v != 0) {
+      SetCursorPos(p.x + (int)(_h*_spd), p.y + (int)(_v*_spd));
+    }
 
     // Wheel movement
     int movement = (int)oDown - (int)yDown;
@@ -137,16 +138,24 @@ LRESULT CALLBACK hookKeyboard(int nCode, WPARAM wParam, LPARAM lParam) {
       inputKey(VK_LMENU, 0, 1);
     }
   } else if (layer == 1) {  // LAYER 1
-    if (altState == KS_HOLD && !isKeyDown(VK_LMENU))
+    if (altState == KS_HOLD && !isKeyDown(VK_LMENU) && !(vkCode == VK_H || vkCode == VK_J || vkCode == VK_K || vkCode == VK_L || vkCode == VK_U || vkCode == VK_I || vkCode == VK_Y || vkCode == VK_O))
       inputKey(VK_LMENU, 0, 0);
-    if (vkCode == VK_U && keydown && !isKeyDown(VK_LBUTTON))
+    if (vkCode == VK_U && keydown && !isKeyDown(VK_LBUTTON)) {
+      bool _tmp = isKeyDown(VK_LMENU);
+      if (_tmp) inputKey(VK_LMENU, 0, 1);
       inputMouse(true, 0);
-    if (vkCode == VK_I && keydown && !isKeyDown(VK_RBUTTON))
+    }
+    if (vkCode == VK_I && keydown && !isKeyDown(VK_RBUTTON)) {
+      bool _tmp = isKeyDown(VK_LMENU);
+      if (_tmp) inputKey(VK_LMENU, 0, 1);
       inputMouse(false, 0);
-    if (vkCode == VK_U && !keydown && isKeyDown(VK_LBUTTON))
+    }
+    if (vkCode == VK_U && !keydown && isKeyDown(VK_LBUTTON)) {
       inputMouse(true, 1);
-    if (vkCode == VK_I && !keydown && isKeyDown(VK_RBUTTON))
+    }
+    if (vkCode == VK_I && !keydown && isKeyDown(VK_RBUTTON)) {
       inputMouse(false, 1);
+    }
     if (vkCode == VK_H || vkCode == VK_J || vkCode == VK_K || vkCode == VK_L || vkCode == VK_U || vkCode == VK_I || vkCode == VK_Y || vkCode == VK_O)
       return 1;
   }
