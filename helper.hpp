@@ -2,6 +2,50 @@
 #define HELPER_HPP
 #include <chrono>
 #include <winuser.h>
+#include <iostream>
+
+// Enum and types for key state
+enum KEY_STATE {
+  KS_UP, KS_DOWN, KS_HOLD, KS_TAP
+};
+typedef struct KeyState {
+  int vkCode;
+  int state;
+  bool down, pressed, released;
+} KeyState;
+
+static void updateKeyState(KeyState &keyState, int vkCode, bool keydown) {
+  bool match = keyState.vkCode == vkCode;
+
+  // down, pressed, released
+  keyState.pressed = false;
+  keyState.released = false;
+  if (match) {
+    keyState.pressed = (keydown && !keyState.down);
+    keyState.released = (!keydown && keyState.down);
+    keyState.down = keydown;
+  }
+
+  // state
+  int &state = keyState.state;
+
+  if (state == KS_TAP)
+    state = KS_UP;
+  if (match) {
+    if (keydown) {
+      state = (state == KS_UP) ? KS_DOWN : state;
+    } else {
+      if (state == KS_DOWN)
+        state = KS_TAP;
+      else
+        state = KS_UP;
+    }
+  } else {
+    if (state == KS_DOWN && keydown) {
+      state = KS_HOLD;
+    }
+  }
+}
 
 // Get current time in milliseconds
 static long long getTime() {
