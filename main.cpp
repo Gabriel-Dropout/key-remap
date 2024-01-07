@@ -106,10 +106,10 @@ LRESULT CALLBACK hookKeyboard(int nCode, WPARAM wParam, LPARAM lParam) {
     inputKey(VK_LCONTROL, 0, 1);
   if (!altState.down && isKeyDown(VK_LMENU))
     inputKey(VK_LMENU, 0, 1);
-  if (uState.released) {
+  if (uState.released && isKeyDown(VK_LBUTTON)) {
     inputMouse(true, 1);
   }
-  if (iState.released) {
+  if (iState.released && isKeyDown(VK_RBUTTON)) {
     inputMouse(false, 1);
   }
   
